@@ -1,0 +1,138 @@
+# Local stack: PostgreSQL (auth_db, course_db, analytics_db) + Redis + Nest apps.
+#
+# Usage:
+#   docker compose up --build
+#   API: http://localhost:3000
+#
+# Prisma `db push` runs once per database via `prisma-push` (each app schema → matching DB).
+# Each microservice sets DATABASE_URL to auth_db, course_db, or analytics_db.
+#
+# The gateway still registers a TCP client for analytics-webhook-service; it is not
+# included here. GET /internal/downstream-health will fail until that service runs
+# or you change the gateway.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DOCKER_POSTGRES_USER:-lms}
+      POSTGRES_PASSWORD: ${DOCKER_POSTGRES_PASSWORD:-lms}
+      POSTGRES_DB: ${DOCKER_POSTGRES_DB:-auth_db}
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${DOCKER_POSTGRES_USER:-lms} -d ${DOCKER_POSTGRES_DB:-auth_db}',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  prisma-push:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: auth-org-service
+    environment:
+      PGHOST: postgres
+      PGUSER: ${DOCKER_POSTGRES_USER:-lms}
+      PGPASSWORD: ${DOCKER_POSTGRES_PASSWORD:-lms}
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        set -e
+        DATABASE_URL="postgresql://${DOCKER_POSTGRES_USER:-lms}:${DOCKER_POSTGRES_PASSWORD:-lms}@postgres:5432/${DOCKER_AUTH_DB_NAME:-auth_db}?schema=public" npx prisma db push --schema apps/auth-org-service/prisma/schema.prisma --skip-generate
+        DATABASE_URL="postgresql://${DOCKER_POSTGRES_USER:-lms}:${DOCKER_POSTGRES_PASSWORD:-lms}@postgres:5432/${DOCKER_COURSE_DB_NAME:-course_db}?schema=public" npx prisma db push --schema apps/course-service/prisma/schema.prisma --skip-generate
+        DATABASE_URL="postgresql://${DOCKER_POSTGRES_USER:-lms}:${DOCKER_POSTGRES_PASSWORD:-lms}@postgres:5432/${DOCKER_ANALYTICS_DB_NAME:-analytics_db}?schema=public" npx prisma db push --schema apps/analytics-webhook-service/prisma/schema.prisma --skip-generate
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  auth-org-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: auth-org-service
+    environment:
+      DATABASE_URL: postgresql://${DOCKER_POSTGRES_USER:-lms}:${DOCKER_POSTGRES_PASSWORD:-lms}@postgres:5432/${DOCKER_AUTH_DB_NAME:-auth_db}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+      REDIS_URL: redis://redis:6379
+      TCP_HOST: 0.0.0.0
+      AUTH_ORG_TCP_PORT: 3001
+    depends_on:
+      prisma-push:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - '3001:3001'
+
+  course-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: course-service
+    environment:
+      DATABASE_URL: postgresql://${DOCKER_POSTGRES_USER:-lms}:${DOCKER_POSTGRES_PASSWORD:-lms}@postgres:5432/${DOCKER_COURSE_DB_NAME:-course_db}?schema=public
+      REDIS_URL: redis://redis:6379
+      TCP_HOST: 0.0.0.0
+      COURSE_TCP_PORT: 3002
+    depends_on:
+      prisma-push:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - '3002:3002'
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: api-gateway
+    environment:
+      PORT: 3000
+      # Must be overridden outside local dev (set JWT_SECRET in your .env).
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+      REDIS_URL: redis://redis:6379
+      AUTH_ORG_TCP_HOST: auth-org-service
+      COURSE_TCP_HOST: course-service
+      AUTH_ORG_TCP_PORT: 3001
+      COURSE_TCP_PORT: 3002
+      ANALYTICS_TCP_HOST: 127.0.0.1
+      ANALYTICS_TCP_PORT: 3003
+    depends_on:
+      auth-org-service:
+        condition: service_started
+      course-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    ports:
+      - '3000:3000'
+
+volumes:
+  pgdata:
+  redisdata:

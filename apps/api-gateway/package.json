@@ -1,0 +1,12 @@
+{
+  "name": "@saas/api-gateway",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "cd ../.. && nest build api-gateway",
+    "dev": "cd ../.. && nest start api-gateway --watch"
+  },
+  "dependencies": {
+    "@saas/common": "0.0.1"
+  }
+}

@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ORG_ADMIN
+  INSTRUCTOR
+  LEARNER
+}
+
+enum TenantKind {
+  ORGANIZATION
+  PLATFORM
+}
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+/// Baseline org row for tenant isolation.
+model Tenant {
+  id          String       @id @default(uuid())
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  name        String
+  kind        TenantKind @default(ORGANIZATION)
+  subscriptionTier SubscriptionTier @default(FREE)
+  allowedDomains String[]  @default([])
+  stripeCustomerId String?
+  stripeSubscriptionId String?
+  /// Purchased / entitled learner seats from Stripe.
+  includedLearnerSeats Int?
+  /// Rolling window length (days) for “active learner” seat activity (login / course signals).
+  seatBillingPeriodDays Int @default(30)
+  users       User[]
+  memberships Membership[]
+  invites     Invite[]
+
+  @@unique([name])
+}
+
+model User {
+  id          String       @id @default(uuid())
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  tenantId    String
+  email       String
+  displayName String?
+  passwordHash String
+  lastLoginAt DateTime?
+  role        Role
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+  invitesSent Invite[]      @relation("InviteSender")
+  refreshTokens RefreshToken[]
+
+  @@index([tenantId])
+  @@unique([tenantId, email])
+}
+
+model Membership {
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  tenantId   String
+  userId     String
+  isActive   Boolean  @default(true)
+  activatedAt DateTime?
+  /// Last login or lesson activity that counts toward seat metering (rolling window per `Tenant.seatBillingPeriodDays`).
+  lastSeatQualifyingActivityAt DateTime?
+  /// When true, this membership may consume a learner seat while active (typically learners only).
+  countsTowardLearnerSeats Boolean @default(false)
+  /// Align with Stripe subscription item billing period when reconciling seats.
+  currentBillingPeriodStart DateTime?
+  currentBillingPeriodEnd   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@unique([tenantId, userId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+  tenantId  String
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tenantId])
+}
+
+/// Invite token for onboarding additional users into a tenant.
+model Invite {
+  id              String   @id @default(uuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenantId        String
+  email           String
+  role            Role
+  token           String   @unique
+  expiresAt       DateTime
+  usedAt          DateTime?
+  invitedByUserId String
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy User   @relation("InviteSender", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, email])
+  @@index([tenantId, token])
+}

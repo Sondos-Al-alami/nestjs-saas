@@ -1,0 +1,11 @@
+{
+  "name": "@saas/common",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "cd ../.. && nest build common",
+    "dev": "cd ../.. && nest build common --watch"
+  }
+}

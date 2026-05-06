@@ -1,0 +1,12 @@
+{
+  "name": "@saas/auth-org-service",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "cd ../.. && nest build auth-org-service",
+    "dev": "cd ../.. && nest start auth-org-service --watch"
+  },
+  "dependencies": {
+    "@saas/common": "0.0.1"
+  }
+}
