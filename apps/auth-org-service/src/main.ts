@@ -17,8 +17,22 @@ function loadAuthOrgEnv(): void {
   }
 }
 
+function assertRequiredSecretsInProduction(): void {
+  if (process.env.NODE_ENV !== 'production') {
+    return;
+  }
+  const required = ['JWT_SECRET', 'INTERNAL_SERVICE_SECRET'];
+  const missing = required.filter((key) => !process.env[key]?.trim());
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required production secret env vars: ${missing.join(', ')}`,
+    );
+  }
+}
+
 async function bootstrap() {
   loadAuthOrgEnv();
+  assertRequiredSecretsInProduction();
 
   const app = await NestFactory.create<NestExpressApplication>(
     AuthOrgServiceModule,

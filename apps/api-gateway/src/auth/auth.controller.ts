@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  ParseIntPipe,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { GetTenant, Role } from '@saas/common';
 import type { Request } from 'express';
 import { ApiGatewayService } from '../api-gateway.service';
@@ -78,4 +86,11 @@ export class AuthGatewayController {
     });
   }
 
+  @Get('billing/ops/summary')
+  @Roles(Role.SUPER_ADMIN)
+  billingOpsSummary(
+    @Query('hours', new ParseIntPipe({ optional: true })) hours?: number,
+  ) {
+    return this.apiGatewayService.billingOpsSummary({ hours });
+  }
 }

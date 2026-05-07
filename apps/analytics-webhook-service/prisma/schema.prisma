@@ -8,9 +8,67 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// Placeholder for event / webhook outbox rows (expand as you add analytics).
-model EventBuffer {
+enum DeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  SKIPPED
+}
+
+model WebhookEndpoint {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
-  payload   Json
+  updatedAt DateTime @updatedAt
+
+  /// Tenant owning this endpoint (matches tenant ids from auth-org-service).
+  tenantId  String   @unique
+
+  url       String
+  secret    String
+  isActive  Boolean  @default(true)
+  consecutiveFailures Int @default(0)
+  lastFailureAt DateTime?
+  lastSuccessAt DateTime?
+  circuitOpenUntil DateTime?
+}
+
+/// Outbox row for analytics events + webhook delivery state.
+model EventBuffer {
+  id             String         @id @default(uuid())
+  createdAt      DateTime       @default(now())
+
+  tenantId       String
+  eventType      String
+
+  /// Dedup key (client-provided). Unique across the whole table.
+  idempotencyKey String         @unique
+
+  payload        Json
+
+  deliveryStatus DeliveryStatus @default(PENDING)
+  deliveryAttempts Int          @default(0)
+  nextAttemptAt  DateTime       @default(now())
+  lastAttemptAt  DateTime?
+  deliveredAt    DateTime?
+  lastError      String?
+
+  @@index([tenantId, createdAt])
+  @@index([deliveryStatus, nextAttemptAt])
+}
+
+model DeadLetterEvent {
+  id              String   @id @default(uuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenantId        String
+  eventBufferId   String   @unique
+  eventType       String
+  idempotencyKey  String
+  payload         Json
+  failureReason   String
+  failedAt        DateTime @default(now())
+  requeuedAt      DateTime?
+
+  @@index([tenantId, createdAt])
 }

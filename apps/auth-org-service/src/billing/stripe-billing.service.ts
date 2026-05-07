@@ -15,6 +15,18 @@ import Stripe from 'stripe';
 import { SubscriptionTier } from '../generated/prisma';
 import { PrismaService } from '../prisma/prisma.service';
 
+function freeTierSeatLimit(): number {
+  const raw = process.env.STRIPE_FREE_INCLUDED_LEARNER_SEATS?.trim();
+  if (!raw) {
+    return 3;
+  }
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    return 3;
+  }
+  return Math.max(1, parsed);
+}
+
 @Injectable()
 export class StripeBillingService {
   private readonly logger = new Logger(StripeBillingService.name);
@@ -29,12 +41,16 @@ export class StripeBillingService {
 
   private assertStripeConfigured(): Stripe {
     if (!this.stripe) {
-      throw new ServiceUnavailableException('STRIPE_SECRET_KEY is not configured');
+      throw new ServiceUnavailableException(
+        'STRIPE_SECRET_KEY is not configured',
+      );
     }
     return this.stripe;
   }
 
-  private isPayingSubscriptionStatus(status: Stripe.Subscription.Status): boolean {
+  private isPayingSubscriptionStatus(
+    status: Stripe.Subscription.Status,
+  ): boolean {
     return status === 'active' || status === 'trialing';
   }
 
@@ -47,7 +63,9 @@ export class StripeBillingService {
     }));
   }
 
-  private async resolveTenantId(sub: Stripe.Subscription): Promise<string | null> {
+  private async resolveTenantId(
+    sub: Stripe.Subscription,
+  ): Promise<string | null> {
     const fromSub = sub.metadata?.tenantId?.trim();
     if (fromSub) {
       return fromSub;
@@ -70,7 +88,9 @@ export class StripeBillingService {
     return customer.metadata?.tenantId?.trim() || null;
   }
 
-  private async syncSubscriptionRecord(sub: Stripe.Subscription): Promise<void> {
+  private async syncSubscriptionRecord(
+    sub: Stripe.Subscription,
+  ): Promise<void> {
     const tenantId = await this.resolveTenantId(sub);
     if (!tenantId) {
       this.logger.warn(
@@ -88,7 +108,7 @@ export class StripeBillingService {
         where: { id: tenantId },
         data: {
           subscriptionTier: SubscriptionTier.FREE,
-          includedLearnerSeats: null,
+          includedLearnerSeats: freeTierSeatLimit(),
           stripeSubscriptionId: null,
           ...(customerId ? { stripeCustomerId: customerId } : {}),
         },
@@ -101,12 +121,16 @@ export class StripeBillingService {
       this.subscriptionLines(sub),
       this.catalog,
     );
+    const normalizedSeats =
+      tier === SubscriptionTier.FREE
+        ? freeTierSeatLimit()
+        : (includedLearnerSeats ?? freeTierSeatLimit());
 
     await this.prisma.tenant.updateMany({
       where: { id: tenantId },
       data: {
         subscriptionTier: tier,
-        includedLearnerSeats,
+        includedLearnerSeats: normalizedSeats,
         stripeSubscriptionId: sub.id,
         ...(customerId ? { stripeCustomerId: customerId } : {}),
       },
@@ -120,17 +144,118 @@ export class StripeBillingService {
       where: { stripeSubscriptionId: subscriptionId },
       data: {
         subscriptionTier: SubscriptionTier.FREE,
-        includedLearnerSeats: null,
+        includedLearnerSeats: freeTierSeatLimit(),
         stripeSubscriptionId: null,
       },
     });
   }
 
+  private subscriptionIdFromInvoice(invoice: Stripe.Invoice): string | null {
+    const sub = invoice.subscription;
+    if (!sub) {
+      return null;
+    }
+    if (typeof sub === 'string') {
+      return sub;
+    }
+    if (typeof sub === 'object' && sub !== null && 'id' in sub) {
+      return sub.id;
+    }
+    return null;
+  }
+
+  private async syncSubscriptionById(subscriptionId: string): Promise<void> {
+    const stripe = this.assertStripeConfigured();
+    try {
+      const sub = await stripe.subscriptions.retrieve(subscriptionId);
+      await this.syncSubscriptionRecord(sub);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Stripe subscriptions.retrieve(${subscriptionId}) failed: ${msg}`,
+      );
+    }
+  }
+
+  private async onInvoiceSubscriptionSync(
+    invoice: Stripe.Invoice,
+  ): Promise<void> {
+    const subscriptionId = this.subscriptionIdFromInvoice(invoice);
+    if (!subscriptionId) {
+      return;
+    }
+    await this.syncSubscriptionById(subscriptionId);
+  }
+
+  private async handleSubscriptionLifecycleEvent(
+    eventType: string,
+    sub: Stripe.Subscription,
+  ): Promise<void> {
+    switch (eventType) {
+      case 'customer.subscription.deleted':
+        await this.clearSubscriptionByStripeId(sub.id);
+        return;
+      case 'customer.subscription.paused':
+        await this.clearSubscriptionByStripeId(sub.id);
+        return;
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+      case 'customer.subscription.resumed':
+      case 'customer.subscription.pending_update_applied':
+      case 'customer.subscription.pending_update_expired':
+      case 'customer.subscription.trial_will_end':
+        await this.syncSubscriptionById(sub.id);
+        return;
+      default:
+        return;
+    }
+  }
+
+  private async processWebhookEventOnce(
+    event: Stripe.Event,
+    handler: () => Promise<void>,
+  ): Promise<void> {
+    const existing = await this.prisma.stripeWebhookEvent.findUnique({
+      where: { stripeEventId: event.id },
+      select: { id: true, processedAt: true },
+    });
+    if (existing?.processedAt) {
+      this.logger.log(`Skipping already-processed Stripe event ${event.id}`);
+      return;
+    }
+    if (!existing) {
+      await this.prisma.stripeWebhookEvent.create({
+        data: {
+          stripeEventId: event.id,
+          eventType: event.type,
+        },
+      });
+    }
+    try {
+      await handler();
+      await this.prisma.stripeWebhookEvent.update({
+        where: { stripeEventId: event.id },
+        data: {
+          processedAt: new Date(),
+          handlingError: null,
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.prisma.stripeWebhookEvent.update({
+        where: { stripeEventId: event.id },
+        data: {
+          handlingError: message.slice(0, 1000),
+        },
+      });
+      throw err;
+    }
+  }
+
   private async onCheckoutSessionCompleted(
     session: Stripe.Checkout.Session,
   ): Promise<void> {
-    const tenantId =
-      session.metadata?.tenantId?.trim() || null;
+    const tenantId = session.metadata?.tenantId?.trim() || null;
     const customerRaw = session.customer;
     const customerId =
       typeof customerRaw === 'string' ? customerRaw : customerRaw?.id;
@@ -168,9 +293,13 @@ export class StripeBillingService {
       throw new BadRequestException('tenantId is required');
     }
 
-    const tierDef = this.catalog.tierPrices.find((t) => t.tier === payload.tier);
+    const tierDef = this.catalog.tierPrices.find(
+      (t) => t.tier === payload.tier,
+    );
     if (!tierDef) {
-      throw new BadRequestException(`No Stripe price configured for tier ${payload.tier}`);
+      throw new BadRequestException(
+        `No Stripe price configured for tier ${payload.tier}`,
+      );
     }
 
     const tenant = await this.prisma.tenant.findUnique({
@@ -194,7 +323,8 @@ export class StripeBillingService {
     }
 
     const returnBase =
-      process.env.BILLING_CHECKOUT_RETURN_BASE_URL?.trim() || 'http://localhost:3000';
+      process.env.BILLING_CHECKOUT_RETURN_BASE_URL?.trim() ||
+      'http://localhost:3000';
     const successUrl = `${returnBase}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${returnBase}/billing/cancel`;
 
@@ -206,18 +336,24 @@ export class StripeBillingService {
       cancel_url: cancelUrl,
       metadata: {
         tenantId,
-        ...(payload.actorUserId ? { initiatedByUserId: payload.actorUserId } : {}),
+        ...(payload.actorUserId
+          ? { initiatedByUserId: payload.actorUserId }
+          : {}),
       },
       subscription_data: {
         metadata: {
           tenantId,
-          ...(payload.actorUserId ? { initiatedByUserId: payload.actorUserId } : {}),
+          ...(payload.actorUserId
+            ? { initiatedByUserId: payload.actorUserId }
+            : {}),
         },
       },
     });
 
     if (!session.url) {
-      throw new ServiceUnavailableException('Stripe did not return a checkout URL');
+      throw new ServiceUnavailableException(
+        'Stripe did not return a checkout URL',
+      );
     }
     return { url: session.url, sessionId: session.id };
   }
@@ -228,7 +364,9 @@ export class StripeBillingService {
   ): Promise<void> {
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
     if (!webhookSecret) {
-      throw new ServiceUnavailableException('STRIPE_WEBHOOK_SECRET is not configured');
+      throw new ServiceUnavailableException(
+        'STRIPE_WEBHOOK_SECRET is not configured',
+      );
     }
 
     const stripe = this.assertStripeConfigured();
@@ -246,23 +384,38 @@ export class StripeBillingService {
       throw new BadRequestException('Invalid Stripe webhook signature');
     }
 
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await this.onCheckoutSessionCompleted(
-          event.data.object as Stripe.Checkout.Session,
-        );
-        break;
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-        await this.syncSubscriptionRecord(event.data.object as Stripe.Subscription);
-        break;
-      case 'customer.subscription.deleted':
-        await this.clearSubscriptionByStripeId(
-          (event.data.object as Stripe.Subscription).id,
-        );
-        break;
-      default:
-        break;
-    }
+    await this.processWebhookEventOnce(event, async () => {
+      switch (event.type) {
+        case 'checkout.session.completed':
+          await this.onCheckoutSessionCompleted(event.data.object);
+          break;
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated':
+        case 'customer.subscription.deleted':
+        case 'customer.subscription.paused':
+        case 'customer.subscription.resumed':
+        case 'customer.subscription.pending_update_applied':
+        case 'customer.subscription.pending_update_expired':
+        case 'customer.subscription.trial_will_end':
+          await this.handleSubscriptionLifecycleEvent(
+            event.type,
+            event.data.object,
+          );
+          break;
+        /** Successful subscription invoice payment — refresh seats / tier from latest subscription. */
+        case 'invoice.paid':
+        case 'invoice.payment_succeeded':
+          await this.onInvoiceSubscriptionSync(event.data.object);
+          break;
+        /** Subscription may move to `past_due` / unpaid; re-sync entitlements from current subscription state. */
+        case 'invoice.payment_failed':
+        case 'invoice.finalized':
+        case 'invoice.voided':
+          await this.onInvoiceSubscriptionSync(event.data.object);
+          break;
+        default:
+          break;
+      }
+    });
   }
 }

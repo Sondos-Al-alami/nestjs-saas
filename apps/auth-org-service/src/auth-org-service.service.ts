@@ -10,7 +10,12 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { RpcException } from '@nestjs/microservices';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { canAssignRole, Role as AppRole } from '@saas/common';
+import {
+  canAssignRole,
+  normalizeSeatEnforcementReason,
+  Role as AppRole,
+  type SeatEnforcementReason,
+} from '@saas/common';
 import { compare, hash } from 'bcryptjs';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import nodemailer from 'nodemailer';
@@ -36,6 +41,18 @@ function isPrismaUniqueViolation(e: unknown): boolean {
 
 function conflictRpc(message: string): RpcException {
   return new RpcException({ statusCode: 409, message });
+}
+
+function freeTierSeatLimit(): number {
+  const raw = process.env.STRIPE_FREE_INCLUDED_LEARNER_SEATS?.trim();
+  if (!raw) {
+    return 3;
+  }
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    return 3;
+  }
+  return Math.max(1, parsed);
 }
 
 @Injectable()
@@ -73,8 +90,13 @@ export class AuthOrgServiceService {
 
   private async assertSeatCapacityForNewActiveLearner(args: {
     tenantId: string;
-    reason: string;
-  }): Promise<{ activeLearnerSeats: number; includedLearnerSeats: number | null }> {
+    reason: SeatEnforcementReason;
+  }): Promise<{
+    activeLearnerSeats: number;
+    includedLearnerSeats: number | null;
+    graceApplied: boolean;
+    graceUntil: string | null;
+  }> {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: args.tenantId },
       select: {
@@ -88,9 +110,8 @@ export class AuthOrgServiceService {
     if (!tenant) {
       throw new NotFoundException('Tenant not found');
     }
-    if (tenant.includedLearnerSeats == null) {
-      return { activeLearnerSeats: 0, includedLearnerSeats: null };
-    }
+    const includedLearnerSeats =
+      tenant.includedLearnerSeats ?? freeTierSeatLimit();
 
     const now = new Date();
     const threshold = new Date(
@@ -107,10 +128,12 @@ export class AuthOrgServiceService {
       },
     });
 
-    if (activeLearnerSeats < tenant.includedLearnerSeats) {
+    if (activeLearnerSeats < includedLearnerSeats) {
       return {
         activeLearnerSeats,
-        includedLearnerSeats: tenant.includedLearnerSeats,
+        includedLearnerSeats,
+        graceApplied: false,
+        graceUntil: null,
       };
     }
 
@@ -125,13 +148,15 @@ export class AuthOrgServiceService {
         );
         return {
           activeLearnerSeats,
-          includedLearnerSeats: tenant.includedLearnerSeats,
+          includedLearnerSeats,
+          graceApplied: true,
+          graceUntil: graceUntil.toISOString(),
         };
       }
     }
 
     throw new ForbiddenException(
-      `Seat limit reached: ${activeLearnerSeats}/${tenant.includedLearnerSeats} active learner seats in use. Cannot ${args.reason}.`,
+      `Seat limit reached: ${activeLearnerSeats}/${includedLearnerSeats} active learner seats in use. Cannot ${args.reason}.`,
     );
   }
 
@@ -149,7 +174,9 @@ export class AuthOrgServiceService {
     }
     const domain = this.domainFromEmail(email);
     if (!allowedDomains.includes(domain)) {
-      throw new ConflictException(`Email domain ${domain} is not allowed for this tenant`);
+      throw new ConflictException(
+        `Email domain ${domain} is not allowed for this tenant`,
+      );
     }
   }
 
@@ -163,7 +190,8 @@ export class AuthOrgServiceService {
     const user = process.env.SMTP_USER?.trim();
     const pass = process.env.SMTP_PASS?.trim();
     const from = process.env.INVITE_EMAIL_FROM?.trim() || 'no-reply@lms.local';
-    const inviteBaseUrl = process.env.INVITE_BASE_URL?.trim() || 'http://localhost:3000';
+    const inviteBaseUrl =
+      process.env.INVITE_BASE_URL?.trim() || 'http://localhost:3000';
     const inviteUrl = `${inviteBaseUrl}/accept-invite?token=${args.token}`;
 
     // Development fallback so invite flow works before SMTP is configured.
@@ -221,7 +249,9 @@ export class AuthOrgServiceService {
       );
     }
     if (adminPassword.length < 8) {
-      throw new BadRequestException('adminPassword must be at least 8 characters');
+      throw new BadRequestException(
+        'adminPassword must be at least 8 characters',
+      );
     }
     const allowedDomains = (payload.allowedDomains ?? [])
       .map((d) => d.trim().toLowerCase())
@@ -297,7 +327,9 @@ export class AuthOrgServiceService {
       throw new BadRequestException('expiresInDays must be between 1 and 30');
     }
     const token = randomUUID().replace(/-/g, '');
-    const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(
+      Date.now() + expiresInDays * 24 * 60 * 60 * 1000,
+    );
 
     const existingUser = await this.prisma.user.findFirst({
       where: { tenantId: payload.tenantId, email },
@@ -432,7 +464,9 @@ export class AuthOrgServiceService {
     const email = this.normalizeEmail(payload.email);
     const password = payload.password ?? '';
     if (!tenantId || !email || !password) {
-      throw new BadRequestException('tenantId, email, and password are required');
+      throw new BadRequestException(
+        'tenantId, email, and password are required',
+      );
     }
 
     const user = await this.prisma.user.findFirst({
@@ -599,9 +633,74 @@ export class AuthOrgServiceService {
     if (!tenantId) {
       throw new BadRequestException('tenantId is required');
     }
-    const reason = payload.reason?.trim() || 'activate learner';
-    const result = await this.assertSeatCapacityForNewActiveLearner({ tenantId, reason });
+    const reason = normalizeSeatEnforcementReason(payload.reason);
+    const result = await this.assertSeatCapacityForNewActiveLearner({
+      tenantId,
+      reason,
+    });
     return { ok: true as const, ...result };
+  }
+
+  async billingOpsSummary(payload: { hours?: number }) {
+    const hours = Math.min(168, Math.max(1, payload.hours ?? 24));
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+    const [totals, processed, failed, pending, recentFailures, byType] =
+      await Promise.all([
+        this.prisma.stripeWebhookEvent.count({
+          where: { createdAt: { gte: since } },
+        }),
+        this.prisma.stripeWebhookEvent.count({
+          where: { createdAt: { gte: since }, processedAt: { not: null } },
+        }),
+        this.prisma.stripeWebhookEvent.count({
+          where: { createdAt: { gte: since }, handlingError: { not: null } },
+        }),
+        this.prisma.stripeWebhookEvent.count({
+          where: {
+            createdAt: { gte: since },
+            processedAt: null,
+            handlingError: null,
+          },
+        }),
+        this.prisma.stripeWebhookEvent.findMany({
+          where: { createdAt: { gte: since }, handlingError: { not: null } },
+          orderBy: { updatedAt: 'desc' },
+          take: 20,
+          select: {
+            stripeEventId: true,
+            eventType: true,
+            updatedAt: true,
+            handlingError: true,
+          },
+        }),
+        this.prisma.stripeWebhookEvent.groupBy({
+          by: ['eventType'],
+          where: { createdAt: { gte: since } },
+          _count: { _all: true },
+          orderBy: { _count: { eventType: 'desc' } },
+        }),
+      ]);
+
+    const failureRate = totals === 0 ? 0 : Number((failed / totals).toFixed(4));
+    return {
+      windowHours: hours,
+      totals,
+      processed,
+      failed,
+      pending,
+      failureRate,
+      byEventType: byType.map((row) => ({
+        eventType: row.eventType,
+        count: row._count._all,
+      })),
+      recentFailures: recentFailures.map((row) => ({
+        stripeEventId: row.stripeEventId,
+        eventType: row.eventType,
+        updatedAt: row.updatedAt.toISOString(),
+        handlingError: row.handlingError,
+      })),
+    };
   }
 
   @Cron(CronExpression.EVERY_HOUR)

@@ -138,7 +138,11 @@ export class CoursesGatewayController {
     @Param('courseId', new ParseUUIDPipe()) courseId: string,
     @Param('lessonId', new ParseUUIDPipe()) lessonId: string,
   ) {
-    return this.apiGatewayService.deleteLesson({ tenantId, courseId, lessonId });
+    return this.apiGatewayService.deleteLesson({
+      tenantId,
+      courseId,
+      lessonId,
+    });
   }
 
   @Post('courses/:courseId/enrollments')
@@ -161,7 +165,10 @@ export class CoursesGatewayController {
     @GetTenant() tenantId: string,
     @Param('courseId', new ParseUUIDPipe()) courseId: string,
   ) {
-    return this.apiGatewayService.listEnrollmentsByCourse({ tenantId, courseId });
+    return this.apiGatewayService.listEnrollmentsByCourse({
+      tenantId,
+      courseId,
+    });
   }
 
   @Get('me/enrollments')

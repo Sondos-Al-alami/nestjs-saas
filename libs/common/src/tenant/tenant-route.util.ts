@@ -27,6 +27,22 @@ export function isTenantOptionalRoute(method: string, path: string): boolean {
     return true;
   }
 
+  if (/^\/internal\/ops\/metrics$/i.test(p) && m === 'GET') {
+    return true;
+  }
+
+  if (/^\/internal\/ops\/health$/i.test(p) && m === 'GET') {
+    return true;
+  }
+
+  if (/^\/internal\/ops\/readiness$/i.test(p) && m === 'GET') {
+    return true;
+  }
+
+  if (/^\/internal\/ops\/alerts$/i.test(p) && m === 'GET') {
+    return true;
+  }
+
   if (/^\/auth\/login$/i.test(p) && (m === 'POST' || m === 'GET')) {
     return true;
   }

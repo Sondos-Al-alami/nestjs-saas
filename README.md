@@ -11,7 +11,7 @@ This repository contains a backend platform with:
 - `api-gateway` as the public HTTP entrypoint
 - `auth-org-service` for authentication, tenant/org setup, invites, and sessions
 - `course-service` for courses, lessons, and enrollments
-- `analytics-webhook-service` scaffold for future analytics/webhook delivery
+- `analytics-webhook-service` for event ingestion, webhook delivery, retries, and DLQ workflows
 - shared contracts and utilities in `libs/common`
 
 The system enforces tenant context (`x-tenant-id`) and role permissions across
@@ -33,6 +33,25 @@ protected routes.
   - learner/staff-safe enrollment read
   - progress updates (`progressPercent`, `lessonsCompleted`, `completed`, `touchAccess`)
 - Subscription-tier guard for course creation limits
+- Stripe billing lifecycle:
+  - webhook processing with replay/idempotency protection
+  - tenant tier/seat entitlement sync from Stripe events
+  - billing ops summary endpoint for operational visibility
+- Seat-based enforcement:
+  - free tier seat cap (env-configurable)
+  - grace window support for over-limit seats
+- Analytics and webhook platform:
+  - learning event capture (lesson started/completed, course completed, certification earned)
+  - idempotent event buffering with delivery status tracking
+  - retry worker with exponential backoff + jitter and circuit-breaker behavior
+  - dead-letter queue listing and requeue flow
+  - admin reports (completions, engagement, event volume)
+- Production hardening:
+  - gateway rate limiting (per-IP and per-tenant)
+  - JSON/urlencoded payload size limits
+  - structured request/error logging and gateway metrics
+  - liveness/readiness/alerts operational endpoints
+  - deployment and incident response runbooks
 
 ## API Routes
 
@@ -42,6 +61,10 @@ All routes below are exposed by the API gateway.
 
 - `GET /`
 - `GET /internal/downstream-health`
+- `GET /internal/ops/health`
+- `GET /internal/ops/readiness`
+- `GET /internal/ops/metrics`
+- `GET /internal/ops/alerts`
 - `POST /auth/register`
 - `POST /auth/login`
 - `POST /auth/refresh`
@@ -54,6 +77,7 @@ All routes below are exposed by the API gateway.
 - `GET /tenant/echo`
 - `GET /tenant/auth-echo`
 - `POST /org/invites` (Org Admin or Super Admin)
+- `GET /billing/ops/summary` (Super Admin)
 
 ### Course and Lesson Routes (Protected)
 
@@ -77,35 +101,75 @@ All routes below are exposed by the API gateway.
 - `PATCH /enrollments/:enrollmentId`
 - `DELETE /enrollments/:enrollmentId`
 
-## Not Yet Implemented (Roadmap Highlights)
+### Analytics Routes (Protected: Org Admin or Super Admin)
 
-
-- Analytics events pipeline (lesson started/completed, course completed, certifications)
-- Reliable webhook delivery system (idempotency, retries/backoff, DLQ)
-- Full Stripe billing lifecycle:
-  - subscription/invoice webhook sync hardening
-  - seat enforcement policies for over-limit scenarios
-- Production hardening:
-  - rate limiting and payload protections
-  - metrics/tracing/observability across services
-  - secret rotation and backup/restore runbooks
-- Product polish:
-  - email notifications (invites/completions)
-  - compliance flows (tenant data export/delete, retention policy)
+- `GET /analytics/events`
+- `GET /analytics/reports/completions`
+- `GET /analytics/reports/engagement`
+- `GET /analytics/reports/event-volume`
+- `GET /analytics/dlq`
+- `POST /analytics/dlq/:deadLetterId/requeue`
+- `POST /analytics/webhook-endpoint`
 
 ## Setup
 
 ```bash
+# 1) Install dependencies
 npm install
+
+# 2) Create root runtime env
+cp .env.example .env
+
+# 3) Create Prisma env files (one DATABASE_URL per service)
+cp apps/auth-org-service/prisma/.env.example apps/auth-org-service/prisma/.env
+cp apps/course-service/prisma/.env.example apps/course-service/prisma/.env
+cp apps/analytics-webhook-service/prisma/.env.example apps/analytics-webhook-service/prisma/.env
+
+# 4) Generate Prisma clients
+npm run prisma:generate:all
+
+# 5) Apply local DB migrations
+npm run prisma:migrate:auth
+npm run prisma:migrate:course
+npm run prisma:migrate:analytics
 ```
 
-## Run
+## Run (Development)
 
 ```bash
-# development
-npm run start:dev
+# Runs api-gateway + auth-org-service + course-service + analytics-webhook-service
+npm run dev
+```
 
-# production
-npm run start:prod
+## Run (Single Service)
+
+```bash
+npm run start:gateway:dev
+npm run start:auth-org:dev
+npm run start:course:dev
+npm run start:analytics:dev
+```
+
+## Production Notes
+
+```bash
+# Build all packages
+npm run build
+
+# Deploy-time migrations (non-destructive)
+npm run prisma:migrate:deploy:auth
+npm run prisma:migrate:deploy:course
+npm run prisma:migrate:deploy:analytics
+```
+
+After startup, verify operational endpoints:
+
+- `GET /internal/ops/health`
+- `GET /internal/ops/readiness`
+- `GET /internal/ops/alerts`
+- `GET /internal/downstream-health`
+
+For Stripe local webhook testing, configure `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`
+and expose `auth-org-service` webhook route: `POST /webhooks/stripe`.
 ```
 

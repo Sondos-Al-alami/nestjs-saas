@@ -30,5 +30,23 @@ export function isActiveLearnerSeat(input: SeatPolicyInput): boolean {
   }
   const now = input.now ?? new Date();
   const windowMs = input.seatBillingPeriodDays * 24 * 60 * 60 * 1000;
-  return now.getTime() - input.lastSeatQualifyingActivityAt.getTime() <= windowMs;
+  return (
+    now.getTime() - input.lastSeatQualifyingActivityAt.getTime() <= windowMs
+  );
+}
+
+export const SEAT_ENFORCEMENT_REASONS = [
+  'activate learner invite',
+  'create enrollment',
+  'reactivate learner membership',
+] as const;
+
+export type SeatEnforcementReason = (typeof SEAT_ENFORCEMENT_REASONS)[number];
+
+export function normalizeSeatEnforcementReason(
+  value: string | null | undefined,
+): SeatEnforcementReason {
+  const normalized = value?.trim().toLowerCase();
+  const match = SEAT_ENFORCEMENT_REASONS.find((r) => r === normalized);
+  return match ?? 'reactivate learner membership';
 }

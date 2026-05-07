@@ -7,11 +7,13 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { GatewayMetricsService } from './gateway-metrics.service';
 
 // Standardizes error payloads and keeps requestId visible for client-side debugging.
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
+  constructor(private readonly metrics: GatewayMetricsService) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -32,8 +34,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       : requestIdHeader;
 
     if (status >= 500) {
+      this.metrics.record5xxError();
       this.logger.error(
-        `${req.method} ${req.originalUrl} -> ${status} requestId=${requestId ?? 'n/a'}`,
+        JSON.stringify({
+          event: 'gateway_exception',
+          method: req.method,
+          path: req.originalUrl,
+          statusCode: status,
+          requestId: requestId ?? null,
+        }),
         exception instanceof Error ? exception.stack : undefined,
       );
     }

@@ -6,7 +6,10 @@ import {
 import type { NextFunction, Request, Response } from 'express';
 import './express-augment';
 import { TENANT_ID_HEADER } from './tenant.constants';
-import { isTenantOptionalRoute, normalizeRequestPath } from './tenant-route.util';
+import {
+  isTenantOptionalRoute,
+  normalizeRequestPath,
+} from './tenant-route.util';
 
 @Injectable()
 export class TenantMiddleware implements NestMiddleware {
@@ -26,7 +29,9 @@ export class TenantMiddleware implements NestMiddleware {
     }
 
     if (!req.tenantId?.trim()) {
-      throw new BadRequestException(`Missing required header: ${TENANT_ID_HEADER}`);
+      throw new BadRequestException(
+        `Missing required header: ${TENANT_ID_HEADER}`,
+      );
     }
 
     next();

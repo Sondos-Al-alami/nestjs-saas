@@ -5,12 +5,16 @@ import {
   Transport,
 } from '@nestjs/microservices';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { TenantInterceptor, TenantMiddleware } from '@saas/common';
 import { AuthModule, JwtAuthGuard, RolesGuard, TenantScopeGuard } from './auth';
+import { AnalyticsGatewayController } from './analytics/analytics.controller';
 import { AuthGatewayController } from './auth/auth.controller';
 import { CoursesGatewayController } from './courses/courses.controller';
 import { ApiGatewayController } from './api-gateway.controller';
 import { ApiGatewayService } from './api-gateway.service';
+import { GatewayMetricsService } from './core/gateway-metrics.service';
+import { GatewayThrottlerGuard } from './core/gateway-throttler.guard';
 import { RequestContextMiddleware } from './core/request-context.middleware';
 
 function tcpClient(
@@ -32,6 +36,24 @@ function tcpClient(
 @Module({
   imports: [
     AuthModule,
+    ThrottlerModule.forRoot([
+      {
+        name: 'ip',
+        ttl: parseInt(process.env.GATEWAY_RATE_LIMIT_IP_TTL_MS ?? '60000', 10),
+        limit: parseInt(process.env.GATEWAY_RATE_LIMIT_IP_LIMIT ?? '120', 10),
+      },
+      {
+        name: 'tenant',
+        ttl: parseInt(
+          process.env.GATEWAY_RATE_LIMIT_TENANT_TTL_MS ?? '60000',
+          10,
+        ),
+        limit: parseInt(
+          process.env.GATEWAY_RATE_LIMIT_TENANT_LIMIT ?? '600',
+          10,
+        ),
+      },
+    ]),
     ClientsModule.register([
       tcpClient(
         'AUTH_ORG_SERVICE',
@@ -52,11 +74,14 @@ function tcpClient(
   ],
   controllers: [
     ApiGatewayController,
+    AnalyticsGatewayController,
     AuthGatewayController,
     CoursesGatewayController,
   ],
   providers: [
     ApiGatewayService,
+    GatewayMetricsService,
+    { provide: APP_GUARD, useClass: GatewayThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: TenantScopeGuard },
@@ -69,6 +94,7 @@ export class ApiGatewayModule implements NestModule {
       .apply(RequestContextMiddleware, TenantMiddleware)
       .forRoutes(
         ApiGatewayController,
+        AnalyticsGatewayController,
         AuthGatewayController,
         CoursesGatewayController,
       );

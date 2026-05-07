@@ -72,7 +72,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       payload.tenantId == null ||
       payload.role == null
     ) {
-      throw new UnauthorizedException('Token missing userId, tenantId, or role');
+      throw new UnauthorizedException(
+        'Token missing userId, tenantId, or role',
+      );
     }
 
     if (!Object.values(Role).includes(payload.role)) {
@@ -83,16 +85,24 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException('Invalid token type');
     }
 
-    const subscriptionTierRaw = payload.subscriptionTier ?? SubscriptionTier.FREE;
+    const subscriptionTierRaw =
+      payload.subscriptionTier ?? SubscriptionTier.FREE;
     if (!Object.values(SubscriptionTier).includes(subscriptionTierRaw)) {
       throw new UnauthorizedException('Invalid subscription tier in token');
     }
     const subscriptionTier = subscriptionTierRaw;
 
-    const rawHeader = req.headers[TENANT_ID_HEADER] ?? req.headers['x-tenant-id'];
-    const headerTenant = (Array.isArray(rawHeader) ? rawHeader[0] : rawHeader)?.trim();
+    const rawHeader =
+      req.headers[TENANT_ID_HEADER] ?? req.headers['x-tenant-id'];
+    const headerTenant = (
+      Array.isArray(rawHeader) ? rawHeader[0] : rawHeader
+    )?.trim();
 
-    if (headerTenant != null && headerTenant !== '' && payload.tenantId !== headerTenant) {
+    if (
+      headerTenant != null &&
+      headerTenant !== '' &&
+      payload.tenantId !== headerTenant
+    ) {
       throw new UnauthorizedException(
         'Tenant in token does not match x-tenant-id header',
       );
@@ -182,7 +192,11 @@ export class TenantScopeGuard implements CanActivate {
     ];
 
     for (const value of candidates) {
-      if (typeof value === 'string' && value.trim() !== '' && value !== expectedTenantId) {
+      if (
+        typeof value === 'string' &&
+        value.trim() !== '' &&
+        value !== expectedTenantId
+      ) {
         throw new ForbiddenException('Cross-tenant access denied');
       }
     }

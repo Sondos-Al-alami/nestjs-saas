@@ -104,7 +104,9 @@ export class CourseServiceController {
   }
 
   @MessagePattern(MSG_COURSE_ENROLLMENT_LIST_BY_COURSE)
-  listEnrollmentsByCourse(@Payload() payload: ListEnrollmentsByCoursePayloadDto) {
+  listEnrollmentsByCourse(
+    @Payload() payload: ListEnrollmentsByCoursePayloadDto,
+  ) {
     return this.courseServiceService.listEnrollmentsByCourse(payload);
   }
 

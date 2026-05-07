@@ -29,7 +29,6 @@ const DEFAULT_INCLUDED_SEATS: Record<SubscriptionTier, number> = {
   [SubscriptionTier.ENTERPRISE]: 100,
 };
 
-
 export function parseStripeBillingCatalogFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): StripeBillingCatalog {
@@ -67,7 +66,9 @@ export function resolveSubscriptionEntitlements(
   lines: SubscriptionLineInput[],
   catalog: StripeBillingCatalog,
 ): { tier: SubscriptionTier; includedLearnerSeats: number | null } {
-  const tierByPrice = new Map(catalog.tierPrices.map((t) => [t.priceId, t] as const));
+  const tierByPrice = new Map(
+    catalog.tierPrices.map((t) => [t.priceId, t] as const),
+  );
 
   let tier = SubscriptionTier.FREE;
   let sawTierLine = false;
@@ -77,11 +78,15 @@ export function resolveSubscriptionEntitlements(
     const tierDef = tierByPrice.get(line.priceId);
     if (tierDef) {
       sawTierLine = true;
+      const quantity = Number.isFinite(line.quantity)
+        ? Math.max(1, line.quantity)
+        : 1;
+      const seatsForLine = tierDef.includedLearnerSeats * quantity;
       if (TIER_RANK[tierDef.tier] > TIER_RANK[tier]) {
         tier = tierDef.tier;
-        bundledSeats = tierDef.includedLearnerSeats;
+        bundledSeats = seatsForLine;
       } else if (tierDef.tier === tier) {
-        bundledSeats += tierDef.includedLearnerSeats;
+        bundledSeats += seatsForLine;
       }
       continue;
     }

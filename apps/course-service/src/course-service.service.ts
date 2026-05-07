@@ -118,7 +118,10 @@ export class CourseServiceService {
       if (count >= maxCourses) {
         throw new RpcException({
           statusCode: 403,
-          message: subscriptionTierCourseLimitMessage(subscriptionTier, maxCourses),
+          message: subscriptionTierCourseLimitMessage(
+            subscriptionTier,
+            maxCourses,
+          ),
         });
       }
     }
@@ -187,8 +190,7 @@ export class CourseServiceService {
     if (!course) {
       notFound('Course not found');
     }
-    const body =
-      payload.body === undefined ? null : payload.body;
+    const body = payload.body === undefined ? null : payload.body;
     return this.prisma.lesson.create({
       data: {
         tenantId,
@@ -208,7 +210,8 @@ export class CourseServiceService {
     if (!existing) {
       notFound('Lesson not found');
     }
-    const data: { title?: string; body?: string | null; sortOrder?: number } = {};
+    const data: { title?: string; body?: string | null; sortOrder?: number } =
+      {};
     if (payload.title !== undefined) {
       data.title = payload.title;
     }

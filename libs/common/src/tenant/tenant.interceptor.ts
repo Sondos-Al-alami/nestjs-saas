@@ -9,7 +9,10 @@ import type { Request } from 'express';
 import { Observable } from 'rxjs';
 import './express-augment';
 import { TENANT_ID_HEADER } from './tenant.constants';
-import { isTenantOptionalRoute, normalizeRequestPath } from './tenant-route.util';
+import {
+  isTenantOptionalRoute,
+  normalizeRequestPath,
+} from './tenant-route.util';
 
 @Injectable()
 export class TenantInterceptor implements NestInterceptor {
@@ -33,7 +36,9 @@ export class TenantInterceptor implements NestInterceptor {
     }
 
     if (!req.tenantId?.trim()) {
-      throw new BadRequestException(`Missing required header: ${TENANT_ID_HEADER}`);
+      throw new BadRequestException(
+        `Missing required header: ${TENANT_ID_HEADER}`,
+      );
     }
 
     return next.handle();
