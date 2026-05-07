@@ -16,17 +16,20 @@ import type { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
 
-export {};
-
-declare global {
-  namespace Express {
-    interface User {
-      userId: string;
-      tenantId: string;
-      role: Role;
-      subscriptionTier: SubscriptionTier;
-    }
+declare module 'express-serve-static-core' {
+  interface User {
+    userId: string;
+    tenantId: string;
+    role: Role;
+    subscriptionTier: SubscriptionTier;
   }
+}
+
+export interface AuthenticatedUser {
+  userId: string;
+  tenantId: string;
+  role: Role;
+  subscriptionTier: SubscriptionTier;
 }
 
 export const IS_PUBLIC_KEY = 'isPublic';
@@ -66,7 +69,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  validate(req: Request, payload: JwtAccessPayload): Express.User {
+  validate(req: Request, payload: JwtAccessPayload): AuthenticatedUser {
     if (
       payload.userId == null ||
       payload.tenantId == null ||
@@ -148,7 +151,9 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const req = context.switchToHttp().getRequest<{ user?: Express.User }>();
+    const req = context
+      .switchToHttp()
+      .getRequest<{ user?: AuthenticatedUser }>();
     const role = req.user?.role;
     if (role == null) {
       throw new ForbiddenException('Missing user role');
@@ -175,7 +180,7 @@ export class TenantScopeGuard implements CanActivate {
     }
 
     const req = context.switchToHttp().getRequest<{
-      user?: Express.User;
+      user?: AuthenticatedUser;
       params?: Record<string, unknown>;
       body?: Record<string, unknown>;
       query?: Record<string, unknown>;

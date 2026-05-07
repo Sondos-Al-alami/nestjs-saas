@@ -122,7 +122,7 @@ export class StripeBillingService {
       this.catalog,
     );
     const normalizedSeats =
-      tier === SubscriptionTier.FREE
+      tier === SharedSubscriptionTier.FREE
         ? freeTierSeatLimit()
         : (includedLearnerSeats ?? freeTierSeatLimit());
 

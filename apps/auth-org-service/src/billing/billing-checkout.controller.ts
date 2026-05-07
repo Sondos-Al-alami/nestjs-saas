@@ -8,29 +8,30 @@ import {
   UnauthorizedException,
   ValidationPipe,
 } from '@nestjs/common';
-import {
-  INTERNAL_SERVICE_AUTH_HEADER,
-  Role,
-  SubscriptionTier,
-} from '@saas/common';
-import { Transform } from 'class-transformer';
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { INTERNAL_SERVICE_AUTH_HEADER, SubscriptionTier } from '@saas/common';
+import { Transform, type TransformFnParams } from 'class-transformer';
+import { IsEnum, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
+import { Role } from '../generated/prisma';
 import { StripeBillingService } from './stripe-billing.service';
 
 class CreateCheckoutBodyDto {
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }: TransformFnParams) =>
+    typeof value === 'string' ? value.trim() : (value as unknown),
+  )
   @IsUUID()
   tenantId!: string;
 
   @IsEnum(SubscriptionTier)
   tier!: SubscriptionTier;
 
-  @IsEnum(Role)
-  actorRole!: Role;
+  @IsIn([Role.SUPER_ADMIN, Role.ORG_ADMIN])
+  actorRole!: typeof Role.SUPER_ADMIN | typeof Role.ORG_ADMIN;
 
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }: TransformFnParams) =>
+    typeof value === 'string' ? value.trim() : (value as unknown),
+  )
   @IsString()
   actorUserId?: string;
 }
@@ -67,14 +68,6 @@ export class BillingCheckoutController {
     @Headers(INTERNAL_SERVICE_AUTH_HEADER) internalAuth: string | undefined,
   ): Promise<{ url: string; sessionId: string }> {
     this.assertInternalAuth(internalAuth);
-    if (
-      body.actorRole !== Role.SUPER_ADMIN &&
-      body.actorRole !== Role.ORG_ADMIN
-    ) {
-      throw new ForbiddenException(
-        'Only SUPER_ADMIN or ORG_ADMIN can create checkout',
-      );
-    }
     const actorUserId = body.actorUserId?.trim();
     if (!actorUserId) {
       throw new BadRequestException('actorUserId is required');

@@ -12,7 +12,7 @@ import {
 import { GetTenant, Role, SubscriptionTier } from '@saas/common';
 import type { Request } from 'express';
 import { ApiGatewayService } from '../api-gateway.service';
-import { Roles } from '../auth';
+import { AuthenticatedUser, Roles } from '../auth';
 import {
   CreateCourseDto,
   CreateEnrollmentDto,
@@ -25,6 +25,10 @@ import {
 @Controller()
 export class CoursesGatewayController {
   constructor(private readonly apiGatewayService: ApiGatewayService) {}
+
+  private userFrom(req: Request): AuthenticatedUser | undefined {
+    return req.user as AuthenticatedUser | undefined;
+  }
 
   @Get('courses')
   @Roles(Role.SUPER_ADMIN, Role.ORG_ADMIN, Role.INSTRUCTOR)
@@ -39,10 +43,11 @@ export class CoursesGatewayController {
     @Req() req: Request,
     @Body() body: CreateCourseDto,
   ) {
+    const user = this.userFrom(req);
     return this.apiGatewayService.createCourse({
       tenantId,
       title: body.title,
-      subscriptionTier: req.user?.subscriptionTier ?? SubscriptionTier.FREE,
+      subscriptionTier: user?.subscriptionTier ?? SubscriptionTier.FREE,
     });
   }
 
@@ -174,9 +179,10 @@ export class CoursesGatewayController {
   @Get('me/enrollments')
   @Roles(Role.SUPER_ADMIN, Role.ORG_ADMIN, Role.INSTRUCTOR, Role.LEARNER)
   listMyEnrollments(@GetTenant() tenantId: string, @Req() req: Request) {
+    const user = this.userFrom(req);
     return this.apiGatewayService.listEnrollmentsByUser({
       tenantId,
-      userId: req.user?.userId ?? '',
+      userId: user?.userId ?? '',
     });
   }
 
@@ -187,11 +193,12 @@ export class CoursesGatewayController {
     @Param('enrollmentId', new ParseUUIDPipe()) enrollmentId: string,
     @Req() req: Request,
   ) {
+    const user = this.userFrom(req);
     return this.apiGatewayService.getEnrollment({
       tenantId,
       enrollmentId,
-      actingUserId: req.user?.userId ?? '',
-      actingRole: req.user?.role ?? Role.LEARNER,
+      actingUserId: user?.userId ?? '',
+      actingRole: user?.role ?? Role.LEARNER,
     });
   }
 
@@ -203,11 +210,12 @@ export class CoursesGatewayController {
     @Req() req: Request,
     @Body() body: UpdateEnrollmentDto,
   ) {
+    const user = this.userFrom(req);
     return this.apiGatewayService.updateEnrollment({
       tenantId,
       enrollmentId,
-      actingUserId: req.user?.userId ?? '',
-      actingRole: req.user?.role ?? Role.LEARNER,
+      actingUserId: user?.userId ?? '',
+      actingRole: user?.role ?? Role.LEARNER,
       progressPercent: body.progressPercent,
       lessonsCompleted: body.lessonsCompleted,
       completed: body.completed,

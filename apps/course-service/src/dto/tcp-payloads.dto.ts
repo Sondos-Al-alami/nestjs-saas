@@ -1,5 +1,5 @@
 import { Role, SubscriptionTier } from '@saas/common';
-import { Transform, Type } from 'class-transformer';
+import { Transform, Type, type TransformFnParams } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
@@ -32,7 +32,9 @@ export class CreateCoursePayloadDto {
   @IsEnum(SubscriptionTier)
   subscriptionTier!: SubscriptionTier;
 
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }: TransformFnParams) =>
+    typeof value === 'string' ? value.trim() : (value as unknown),
+  )
   @IsString()
   @Length(1, 200)
   title!: string;
@@ -45,7 +47,9 @@ export class UpdateCoursePayloadDto {
   @IsUUID()
   courseId!: string;
 
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }: TransformFnParams) =>
+    typeof value === 'string' ? value.trim() : (value as unknown),
+  )
   @IsString()
   @Length(1, 200)
   title!: string;
@@ -85,7 +89,9 @@ export class CreateLessonPayloadDto {
   @IsUUID()
   courseId!: string;
 
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }: TransformFnParams) =>
+    typeof value === 'string' ? value.trim() : (value as unknown),
+  )
   @IsString()
   @Length(1, 200)
   title!: string;
@@ -114,7 +120,9 @@ export class UpdateLessonPayloadDto {
   lessonId!: string;
 
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }: TransformFnParams) =>
+    typeof value === 'string' ? value.trim() : (value as unknown),
+  )
   @IsString()
   @Length(1, 200)
   title?: string;

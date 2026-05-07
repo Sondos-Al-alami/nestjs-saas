@@ -4,9 +4,9 @@ import type { Request } from 'express';
 
 @Injectable()
 export class GatewayThrottlerGuard extends ThrottlerGuard {
-  protected async getTracker(req: Record<string, any>): Promise<string> {
+  protected getTracker(req: Record<string, any>): Promise<string> {
     const request = req as Request;
-    return request.ip ?? 'unknown-ip';
+    return Promise.resolve(request.ip ?? 'unknown-ip');
   }
 
   protected generateKey(

@@ -52,4 +52,4 @@ async function bootstrap() {
   const httpPort = parseInt(process.env.AUTH_ORG_HTTP_PORT ?? '3011', 10);
   await app.listen(httpPort);
 }
-bootstrap();
+void bootstrap();

@@ -10,7 +10,7 @@ import {
 import { GetTenant, Role } from '@saas/common';
 import type { Request } from 'express';
 import { ApiGatewayService } from '../api-gateway.service';
-import { Public, Roles } from './index';
+import { AuthenticatedUser, Public, Roles } from './index';
 import {
   AcceptInviteDto,
   CreateInviteDto,
@@ -22,6 +22,10 @@ import {
 @Controller()
 export class AuthGatewayController {
   constructor(private readonly apiGatewayService: ApiGatewayService) {}
+
+  private userFrom(req: Request): AuthenticatedUser | undefined {
+    return req.user as AuthenticatedUser | undefined;
+  }
 
   @Public()
   @Post('auth/register')
@@ -49,9 +53,10 @@ export class AuthGatewayController {
 
   @Post('auth/logout-all')
   logoutAll(@GetTenant() tenantId: string, @Req() req: Request) {
+    const user = this.userFrom(req);
     return this.apiGatewayService.logoutAllSessions({
       tenantId,
-      userId: req.user?.userId ?? '',
+      userId: user?.userId ?? '',
     });
   }
 
@@ -68,9 +73,10 @@ export class AuthGatewayController {
     @Req() req: Request,
     @Body() payload: CreateInviteDto,
   ) {
+    const user = this.userFrom(req);
     return this.apiGatewayService.createInvite({
       tenantId,
-      invitedByUserId: req.user?.userId ?? '',
+      invitedByUserId: user?.userId ?? '',
       email: payload.email,
       role: payload.role ?? Role.LEARNER,
       expiresInDays: payload.expiresInDays,
@@ -79,10 +85,11 @@ export class AuthGatewayController {
 
   @Get('tenant/auth-echo')
   tenantAuthEcho(@GetTenant() tenantId: string, @Req() req: Request) {
+    const user = this.userFrom(req);
     return this.apiGatewayService.tenantAuthEcho({
       tenantId,
-      userId: req.user?.userId ?? '',
-      role: req.user?.role ?? '',
+      userId: user?.userId ?? '',
+      role: user?.role ?? '',
     });
   }
 

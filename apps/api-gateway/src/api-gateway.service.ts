@@ -55,6 +55,8 @@ import {
 import { firstValueFrom } from 'rxjs';
 import { GatewayMetricsService } from './core/gateway-metrics.service';
 
+type HealthResponse = { service: string; ok: boolean };
+
 @Injectable()
 export class ApiGatewayService {
   private readonly logger = new Logger(ApiGatewayService.name);
@@ -239,9 +241,13 @@ export class ApiGatewayService {
 
   async downstreamHealth() {
     const [authOrg, course, analytics] = await Promise.all([
-      firstValueFrom(this.authOrg.send(MSG_AUTH_ORG_HEALTH, {})),
-      firstValueFrom(this.course.send(MSG_COURSE_HEALTH, {})),
-      firstValueFrom(this.analytics.send(MSG_ANALYTICS_HEALTH, {})),
+      firstValueFrom(
+        this.authOrg.send<HealthResponse>(MSG_AUTH_ORG_HEALTH, {}),
+      ),
+      firstValueFrom(this.course.send<HealthResponse>(MSG_COURSE_HEALTH, {})),
+      firstValueFrom(
+        this.analytics.send<HealthResponse>(MSG_ANALYTICS_HEALTH, {}),
+      ),
     ]);
     return { authOrg, course, analytics };
   }
@@ -281,15 +287,19 @@ export class ApiGatewayService {
     const checks = await Promise.all([
       this.probeWithTimeout(
         'auth-org-service',
-        firstValueFrom(this.authOrg.send(MSG_AUTH_ORG_HEALTH, {})),
+        firstValueFrom(
+          this.authOrg.send<HealthResponse>(MSG_AUTH_ORG_HEALTH, {}),
+        ),
       ),
       this.probeWithTimeout(
         'course-service',
-        firstValueFrom(this.course.send(MSG_COURSE_HEALTH, {})),
+        firstValueFrom(this.course.send<HealthResponse>(MSG_COURSE_HEALTH, {})),
       ),
       this.probeWithTimeout(
         'analytics-webhook-service',
-        firstValueFrom(this.analytics.send(MSG_ANALYTICS_HEALTH, {})),
+        firstValueFrom(
+          this.analytics.send<HealthResponse>(MSG_ANALYTICS_HEALTH, {}),
+        ),
       ),
     ]);
     const ok = checks.every((c) => c.ok);

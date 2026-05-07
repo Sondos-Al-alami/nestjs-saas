@@ -10,7 +10,7 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { GetTenant, Role } from '@saas/common';
-import { Transform } from 'class-transformer';
+import { Transform, type TransformFnParams } from 'class-transformer';
 import {
   IsBoolean,
   IsOptional,
@@ -22,11 +22,15 @@ import { Roles } from '../auth';
 import { ApiGatewayService } from '../api-gateway.service';
 
 class UpsertWebhookEndpointDto {
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }: TransformFnParams) =>
+    typeof value === 'string' ? value.trim() : (value as unknown),
+  )
   @IsUrl({ require_tld: false })
   url!: string;
 
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }: TransformFnParams) =>
+    typeof value === 'string' ? value.trim() : (value as unknown),
+  )
   @IsString()
   @Length(16, 200)
   secret!: string;

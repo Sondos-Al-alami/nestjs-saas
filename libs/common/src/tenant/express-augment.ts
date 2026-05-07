@@ -1,9 +1,5 @@
-export {};
-
-declare global {
-  namespace Express {
-    interface Request {
-      tenantId?: string;
-    }
+declare module 'express-serve-static-core' {
+  interface Request {
+    tenantId?: string;
   }
 }
