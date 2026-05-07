@@ -171,4 +171,3 @@ After startup, verify operational endpoints:
 
 For Stripe local webhook testing, configure `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`
 and expose `auth-org-service` webhook route: `POST /webhooks/stripe`.
-```
