@@ -204,7 +204,7 @@ export class StripeBillingService {
       case 'customer.subscription.pending_update_applied':
       case 'customer.subscription.pending_update_expired':
       case 'customer.subscription.trial_will_end':
-        await this.syncSubscriptionById(sub.id);
+        await this.syncSubscriptionRecord(sub);
         return;
       default:
         return;
@@ -271,15 +271,17 @@ export class StripeBillingService {
       return;
     }
 
-    const stripe = this.stripe;
     const subRef = session.subscription;
-    const subId = typeof subRef === 'string' ? subRef : subRef?.id;
-    if (!stripe || !subId) {
+    if (subRef && typeof subRef === 'object' && 'id' in subRef) {
+      await this.syncSubscriptionRecord(subRef as Stripe.Subscription);
       return;
     }
 
-    const sub = await stripe.subscriptions.retrieve(subId);
-    await this.syncSubscriptionRecord(sub);
+    const subId = typeof subRef === 'string' ? subRef : undefined;
+    if (!subId) {
+      return;
+    }
+    await this.syncSubscriptionById(subId);
   }
 
   async createCheckoutSession(payload: {

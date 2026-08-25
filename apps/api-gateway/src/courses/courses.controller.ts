@@ -9,10 +9,15 @@ import {
   Post,
   Req,
 } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import { GetTenant, Role, SubscriptionTier } from '@saas/common';
 import type { Request } from 'express';
-import { ApiGatewayService } from '../api-gateway.service';
 import { AuthenticatedUser, Roles } from '../auth';
+import { CourseGatewayService } from './course-gateway.service';
 import {
   CreateCourseDto,
   CreateEnrollmentDto,
@@ -22,9 +27,12 @@ import {
   UpdateLessonDto,
 } from './dto';
 
+@ApiTags('courses')
+@ApiBearerAuth('access-token')
+@ApiSecurity('tenant-id')
 @Controller()
 export class CoursesGatewayController {
-  constructor(private readonly apiGatewayService: ApiGatewayService) {}
+  constructor(private readonly courseGateway: CourseGatewayService) {}
 
   private userFrom(req: Request): AuthenticatedUser | undefined {
     return req.user as AuthenticatedUser | undefined;
@@ -33,7 +41,7 @@ export class CoursesGatewayController {
   @Get('courses')
   @Roles(Role.SUPER_ADMIN, Role.ORG_ADMIN, Role.INSTRUCTOR)
   listCourses(@GetTenant() tenantId: string) {
-    return this.apiGatewayService.listCourses({ tenantId });
+    return this.courseGateway.listCourses({ tenantId });
   }
 
   @Post('courses')
@@ -44,7 +52,7 @@ export class CoursesGatewayController {
     @Body() body: CreateCourseDto,
   ) {
     const user = this.userFrom(req);
-    return this.apiGatewayService.createCourse({
+    return this.courseGateway.createCourse({
       tenantId,
       title: body.title,
       subscriptionTier: user?.subscriptionTier ?? SubscriptionTier.FREE,
@@ -57,7 +65,7 @@ export class CoursesGatewayController {
     @GetTenant() tenantId: string,
     @Param('courseId', new ParseUUIDPipe()) courseId: string,
   ) {
-    return this.apiGatewayService.getCourse({ tenantId, courseId });
+    return this.courseGateway.getCourse({ tenantId, courseId });
   }
 
   @Patch('courses/:courseId')
@@ -67,7 +75,7 @@ export class CoursesGatewayController {
     @Param('courseId', new ParseUUIDPipe()) courseId: string,
     @Body() body: UpdateCourseDto,
   ) {
-    return this.apiGatewayService.updateCourse({
+    return this.courseGateway.updateCourse({
       tenantId,
       courseId,
       title: body.title,
@@ -80,7 +88,7 @@ export class CoursesGatewayController {
     @GetTenant() tenantId: string,
     @Param('courseId', new ParseUUIDPipe()) courseId: string,
   ) {
-    return this.apiGatewayService.deleteCourse({ tenantId, courseId });
+    return this.courseGateway.deleteCourse({ tenantId, courseId });
   }
 
   @Get('courses/:courseId/lessons')
@@ -89,7 +97,7 @@ export class CoursesGatewayController {
     @GetTenant() tenantId: string,
     @Param('courseId', new ParseUUIDPipe()) courseId: string,
   ) {
-    return this.apiGatewayService.listLessons({ tenantId, courseId });
+    return this.courseGateway.listLessons({ tenantId, courseId });
   }
 
   @Post('courses/:courseId/lessons')
@@ -99,7 +107,7 @@ export class CoursesGatewayController {
     @Param('courseId', new ParseUUIDPipe()) courseId: string,
     @Body() body: CreateLessonDto,
   ) {
-    return this.apiGatewayService.createLesson({
+    return this.courseGateway.createLesson({
       tenantId,
       courseId,
       title: body.title,
@@ -115,7 +123,7 @@ export class CoursesGatewayController {
     @Param('courseId', new ParseUUIDPipe()) courseId: string,
     @Param('lessonId', new ParseUUIDPipe()) lessonId: string,
   ) {
-    return this.apiGatewayService.getLesson({ tenantId, courseId, lessonId });
+    return this.courseGateway.getLesson({ tenantId, courseId, lessonId });
   }
 
   @Patch('courses/:courseId/lessons/:lessonId')
@@ -126,7 +134,7 @@ export class CoursesGatewayController {
     @Param('lessonId', new ParseUUIDPipe()) lessonId: string,
     @Body() body: UpdateLessonDto,
   ) {
-    return this.apiGatewayService.updateLesson({
+    return this.courseGateway.updateLesson({
       tenantId,
       courseId,
       lessonId,
@@ -143,7 +151,7 @@ export class CoursesGatewayController {
     @Param('courseId', new ParseUUIDPipe()) courseId: string,
     @Param('lessonId', new ParseUUIDPipe()) lessonId: string,
   ) {
-    return this.apiGatewayService.deleteLesson({
+    return this.courseGateway.deleteLesson({
       tenantId,
       courseId,
       lessonId,
@@ -157,7 +165,7 @@ export class CoursesGatewayController {
     @Param('courseId', new ParseUUIDPipe()) courseId: string,
     @Body() body: CreateEnrollmentDto,
   ) {
-    return this.apiGatewayService.createEnrollment({
+    return this.courseGateway.createEnrollment({
       tenantId,
       courseId,
       userId: body.userId,
@@ -170,7 +178,7 @@ export class CoursesGatewayController {
     @GetTenant() tenantId: string,
     @Param('courseId', new ParseUUIDPipe()) courseId: string,
   ) {
-    return this.apiGatewayService.listEnrollmentsByCourse({
+    return this.courseGateway.listEnrollmentsByCourse({
       tenantId,
       courseId,
     });
@@ -180,7 +188,7 @@ export class CoursesGatewayController {
   @Roles(Role.SUPER_ADMIN, Role.ORG_ADMIN, Role.INSTRUCTOR, Role.LEARNER)
   listMyEnrollments(@GetTenant() tenantId: string, @Req() req: Request) {
     const user = this.userFrom(req);
-    return this.apiGatewayService.listEnrollmentsByUser({
+    return this.courseGateway.listEnrollmentsByUser({
       tenantId,
       userId: user?.userId ?? '',
     });
@@ -194,7 +202,7 @@ export class CoursesGatewayController {
     @Req() req: Request,
   ) {
     const user = this.userFrom(req);
-    return this.apiGatewayService.getEnrollment({
+    return this.courseGateway.getEnrollment({
       tenantId,
       enrollmentId,
       actingUserId: user?.userId ?? '',
@@ -211,7 +219,7 @@ export class CoursesGatewayController {
     @Body() body: UpdateEnrollmentDto,
   ) {
     const user = this.userFrom(req);
-    return this.apiGatewayService.updateEnrollment({
+    return this.courseGateway.updateEnrollment({
       tenantId,
       enrollmentId,
       actingUserId: user?.userId ?? '',
@@ -229,6 +237,6 @@ export class CoursesGatewayController {
     @GetTenant() tenantId: string,
     @Param('enrollmentId', new ParseUUIDPipe()) enrollmentId: string,
   ) {
-    return this.apiGatewayService.deleteEnrollment({ tenantId, enrollmentId });
+    return this.courseGateway.deleteEnrollment({ tenantId, enrollmentId });
   }
 }

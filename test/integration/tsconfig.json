@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "strictNullChecks": true,
+    "skipLibCheck": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "isolatedModules": true,
+    "types": ["jest", "node"],
+    "paths": {
+      "@saas/common": ["../../libs/common/src/index.ts"],
+      "@saas/common/*": ["../../libs/common/src/*"]
+    }
+  },
+  "include": ["./**/*.ts"]
+}
