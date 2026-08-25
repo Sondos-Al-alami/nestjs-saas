@@ -13,7 +13,6 @@
     "target": "ES2023",
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,
@@ -21,9 +20,10 @@
     "noImplicitAny": true,
     "strictBindCallApply": true,
     "noFallthroughCasesInSwitch": true,
+    "types": ["node", "jest"],
     "paths": {
-      "@saas/common": ["libs/common/src/index.ts"],
-      "@saas/common/*": ["libs/common/src/*"]
+      "@saas/common": ["./libs/common/src/index.ts"],
+      "@saas/common/*": ["./libs/common/src/*"]
     }
   }
 }

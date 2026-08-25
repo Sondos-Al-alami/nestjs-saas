@@ -7,6 +7,10 @@ import { config as dotenvConfig } from 'dotenv';
 import { AuthOrgServiceModule } from './auth-org-service.module';
 
 function loadAuthOrgEnv(): void {
+  // Integration / E2E stack injects env via spawn; do not let dev `.env` override it.
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
   const rootEnv = resolve(process.cwd(), '.env');
   const appEnv = resolve(process.cwd(), 'apps/auth-org-service/.env');
   if (existsSync(rootEnv)) {

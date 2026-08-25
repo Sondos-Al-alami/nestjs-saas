@@ -56,10 +56,12 @@ apps/**/prisma/.env
 .env.test.local
 .env.production.local
 .env.local
+.env.integration
 
 # temp directory
 .temp
 .tmp
+.tmp/integration-stack-state.json
 
 # Runtime data
 pids

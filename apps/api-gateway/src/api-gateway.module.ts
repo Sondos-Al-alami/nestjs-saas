@@ -13,6 +13,9 @@ import { AuthGatewayController } from './auth/auth.controller';
 import { CoursesGatewayController } from './courses/courses.controller';
 import { ApiGatewayController } from './api-gateway.controller';
 import { ApiGatewayService } from './api-gateway.service';
+import { AnalyticsGatewayService } from './analytics/analytics-gateway.service';
+import { AuthGatewayService } from './auth/auth-gateway.service';
+import { CourseGatewayService } from './courses/course-gateway.service';
 import { GatewayMetricsService } from './core/gateway-metrics.service';
 import { GatewayThrottlerGuard } from './core/gateway-throttler.guard';
 import { RequestContextMiddleware } from './core/request-context.middleware';
@@ -80,6 +83,9 @@ function tcpClient(
   ],
   providers: [
     ApiGatewayService,
+    AuthGatewayService,
+    CourseGatewayService,
+    AnalyticsGatewayService,
     GatewayMetricsService,
     { provide: APP_GUARD, useClass: GatewayThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },

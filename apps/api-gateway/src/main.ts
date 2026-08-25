@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { ApiGatewayModule } from './api-gateway.module';
 import { AllExceptionsFilter } from './core/all-exceptions.filter';
 import { GatewayMetricsService } from './core/gateway-metrics.service';
+import { isSwaggerEnabled, setupSwagger } from './core/swagger';
 
 function assertRequiredSecretsInProduction(): void {
   if (process.env.NODE_ENV !== 'production') {
@@ -40,7 +41,13 @@ async function bootstrap() {
   if (trustProxy) {
     app.set('trust proxy', 1);
   }
-  app.use(helmet());
+
+  // Swagger UI needs looser CSP in non-production when docs are enabled.
+  app.use(
+    helmet({
+      contentSecurityPolicy: isSwaggerEnabled() ? false : undefined,
+    }),
+  );
   const corsOrigins = resolveCorsOrigins();
   if (corsOrigins.length > 0) {
     app.enableCors({
@@ -75,7 +82,14 @@ async function bootstrap() {
     }),
   );
   app.useGlobalFilters(new AllExceptionsFilter(app.get(GatewayMetricsService)));
+
+  setupSwagger(app);
+
   const port = parseInt(process.env.PORT ?? '3000', 10);
   await app.listen(port);
+  if (isSwaggerEnabled()) {
+    console.log(`OpenAPI UI: http://127.0.0.1:${port}/docs`);
+    console.log(`OpenAPI JSON: http://127.0.0.1:${port}/docs-json`);
+  }
 }
 void bootstrap();

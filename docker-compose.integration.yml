@@ -1,0 +1,22 @@
+# Integration E2E Postgres only (port 5434, user lms_it). Prefer: npm run docker:integration:db:prepare
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lms_it
+      POSTGRES_PASSWORD: lms_it
+      POSTGRES_DB: auth_db
+    ports:
+      - '5434:5432'
+    volumes:
+      - pgdata_integration:/var/lib/postgresql/data
+      - ./docker/postgres/init-integration:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lms_it -d auth_db']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  pgdata_integration:

@@ -9,6 +9,13 @@ import {
   Query,
   ValidationPipe,
 } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiProperty,
+  ApiPropertyOptional,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import { GetTenant, Role } from '@saas/common';
 import { Transform, type TransformFnParams } from 'class-transformer';
 import {
@@ -19,15 +26,17 @@ import {
   Length,
 } from 'class-validator';
 import { Roles } from '../auth';
-import { ApiGatewayService } from '../api-gateway.service';
+import { AnalyticsGatewayService } from './analytics-gateway.service';
 
 class UpsertWebhookEndpointDto {
+  @ApiProperty({ example: 'https://example.com/hooks/lms' })
   @Transform(({ value }: TransformFnParams) =>
     typeof value === 'string' ? value.trim() : (value as unknown),
   )
   @IsUrl({ require_tld: false })
   url!: string;
 
+  @ApiProperty({ minLength: 16, maxLength: 200 })
   @Transform(({ value }: TransformFnParams) =>
     typeof value === 'string' ? value.trim() : (value as unknown),
   )
@@ -35,14 +44,18 @@ class UpsertWebhookEndpointDto {
   @Length(16, 200)
   secret!: string;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }
 
+@ApiTags('analytics')
+@ApiBearerAuth('access-token')
+@ApiSecurity('tenant-id')
 @Controller('analytics')
 export class AnalyticsGatewayController {
-  constructor(private readonly apiGatewayService: ApiGatewayService) {}
+  constructor(private readonly analyticsGateway: AnalyticsGatewayService) {}
 
   @Get('events')
   @Roles(Role.SUPER_ADMIN, Role.ORG_ADMIN)
@@ -52,7 +65,7 @@ export class AnalyticsGatewayController {
     @Query('cursor') cursor?: string,
     @Query('eventType') eventType?: string,
   ) {
-    return this.apiGatewayService.listAnalyticsEvents({
+    return this.analyticsGateway.listEvents({
       tenantId,
       limit,
       cursor,
@@ -63,7 +76,7 @@ export class AnalyticsGatewayController {
   @Get('reports/completions')
   @Roles(Role.SUPER_ADMIN, Role.ORG_ADMIN)
   completionReport(@GetTenant() tenantId: string) {
-    return this.apiGatewayService.completionReport({ tenantId });
+    return this.analyticsGateway.completionReport({ tenantId });
   }
 
   @Get('reports/engagement')
@@ -72,7 +85,7 @@ export class AnalyticsGatewayController {
     @GetTenant() tenantId: string,
     @Query('days', new ParseIntPipe({ optional: true })) days?: number,
   ) {
-    return this.apiGatewayService.engagementReport({ tenantId, days });
+    return this.analyticsGateway.engagementReport({ tenantId, days });
   }
 
   @Get('reports/event-volume')
@@ -81,7 +94,7 @@ export class AnalyticsGatewayController {
     @GetTenant() tenantId: string,
     @Query('days', new ParseIntPipe({ optional: true })) days?: number,
   ) {
-    return this.apiGatewayService.eventVolumeReport({ tenantId, days });
+    return this.analyticsGateway.eventVolumeReport({ tenantId, days });
   }
 
   @Get('dlq')
@@ -92,7 +105,7 @@ export class AnalyticsGatewayController {
     @Query('cursor') cursor?: string,
     @Query('eventType') eventType?: string,
   ) {
-    return this.apiGatewayService.listAnalyticsDlq({
+    return this.analyticsGateway.listDlq({
       tenantId,
       limit,
       cursor,
@@ -106,7 +119,7 @@ export class AnalyticsGatewayController {
     @GetTenant() tenantId: string,
     @Param('deadLetterId', new ParseUUIDPipe()) deadLetterId: string,
   ) {
-    return this.apiGatewayService.requeueAnalyticsDlq({
+    return this.analyticsGateway.requeueDlq({
       tenantId,
       deadLetterId,
     });
@@ -125,7 +138,7 @@ export class AnalyticsGatewayController {
     )
     body: UpsertWebhookEndpointDto,
   ) {
-    return this.apiGatewayService.upsertAnalyticsWebhookEndpoint({
+    return this.analyticsGateway.upsertWebhookEndpoint({
       tenantId,
       url: body.url,
       secret: body.secret,
